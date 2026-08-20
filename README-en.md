@@ -1,3 +1,4 @@
+[中文](https://github.com/wxk66/clash-node-filter/edit/main/README.md) | English
 # Clash Node Filter
 
 A Windows desktop GUI for batch-checking Clash/Mihomo subscription nodes by making real HTTP/HTTPS web requests instead of using ping. The project is inspired by [zhsama/clash-speedtest](https://github.com/zhsama/clash-speedtest) and uses a single light desktop window with a compact layout inspired by FlClash.
