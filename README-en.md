@@ -19,7 +19,7 @@ A Windows desktop GUI for batch-checking Clash/Mihomo subscription nodes by maki
 
 ## Download
 
-Download the latest `Clash节点筛选器.exe` from the GitHub Releases page and run it directly. Go and Python are not required for the release build.
+Download the latest `ClashNodeFilter.exe` from the GitHub Releases page and run it directly. Go and Python are not required for the release build.
 
 ## Run from source
 

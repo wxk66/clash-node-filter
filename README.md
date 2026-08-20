@@ -19,7 +19,7 @@ Windows 桌面 GUI，用真实 HTTP/HTTPS 网页访问批量验证 Clash/Mihomo 
 
 ## 下载
 
-请在 GitHub Releases 页面下载最新的 `Clash节点筛选器.exe`。下载后直接运行即可，无需安装 Go 或 Python。
+请在 GitHub Releases 页面下载最新的 `ClashNodeFilter.exe`。下载后直接运行即可，无需安装 Go 或 Python。
 
 ## 从源码运行
 
