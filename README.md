@@ -1,3 +1,4 @@
+中文 | [English](https://github.com/wxk66/clash-node-filter/blob/main/README-en.md)
 # Clash 节点筛选器
 
 Windows 桌面 GUI，用真实 HTTP/HTTPS 网页访问批量验证 Clash/Mihomo 订阅节点，不使用 ping。项目参考 [zhsama/clash-speedtest](https://github.com/zhsama/clash-speedtest)，界面采用单一主窗口和 FlClash 风格的浅色信息布局。
