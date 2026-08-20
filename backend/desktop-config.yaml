@@ -1,0 +1,13 @@
+server:
+  port: 18080
+  host: "127.0.0.1"
+logger:
+  level: "WARN"
+  output_to_file: true
+  log_dir: "logs"
+  log_file_name: "desktop-filter.log"
+  max_size: 10485760
+  max_files: 3
+  rotate_on_start: true
+  enable_console: false
+  format: "text"
