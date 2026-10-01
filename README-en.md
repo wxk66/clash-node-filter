@@ -11,6 +11,7 @@ A Windows desktop GUI for batch-checking Clash/Mihomo subscription nodes by maki
 - Overseas web targets support click-to-select multi-selection with `√` / `□` indicators.
 - Configurable concurrency, per-stage timeout, maximum latency, and sample sizes.
 - Live result table with horizontal scrolling and JSON/CSV export.
+- UI available in English and 中文; switch with one click in the top-right corner. The language follows the system locale by default and the choice is remembered.
 - The core listens only on `127.0.0.1:18080`, starts hidden, and does not open a terminal window.
 - Windows high-DPI support.
 
@@ -51,6 +52,7 @@ Only test subscriptions you are authorized to use. Speed tests generate real tra
 ## Project layout
 
 - `desktop_app.py`: Tkinter GUI and local API client.
+- `i18n.py`: UI translations (English / 中文).
 - `backend/`: Mihomo core service, node parsing, web tests, and unlock detectors.
 - `build.ps1`: Builds the local test core.
 - `build_gui.ps1`: Packages the Windows GUI with PyInstaller.

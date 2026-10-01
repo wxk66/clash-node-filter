@@ -1,15 +1,22 @@
 package detectors
 
 import (
-	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/zhsama/clash-speedtest/unlock"
 )
+
+// randomSession 生成 32 位十六进制随机串，仅作为 B 站 API 的 session 标识。
+func randomSession() string {
+	buf := make([]byte, 16)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
+}
 
 // TestBilibiliMainland 测试哔哩哔哩大陆限定解锁情况
 func TestBilibiliMainland(client *http.Client) *unlock.StreamResult {
@@ -18,7 +25,7 @@ func TestBilibiliMainland(client *http.Client) *unlock.StreamResult {
 	}
 
 	// 生成随机session
-	session := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))))
+	session := randomSession()
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.bilibili.com/pgc/player/web/playurl?avid=82846771&qn=0&type=&otype=json&ep_id=307247&fourk=1&fnver=0&fnval=16&session=%s&module=bangumi", session), nil)
 	if err != nil {
@@ -77,7 +84,7 @@ func TestBilibiliHKMCTW(client *http.Client) *unlock.StreamResult {
 	}
 
 	// 生成随机session
-	session := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))))
+	session := randomSession()
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.bilibili.com/pgc/player/web/playurl?avid=18281381&cid=29892777&qn=0&type=&otype=json&ep_id=183799&fourk=1&fnver=0&fnval=16&session=%s&module=bangumi", session), nil)
 	if err != nil {
@@ -136,7 +143,7 @@ func TestBilibiliTW(client *http.Client) *unlock.StreamResult {
 	}
 
 	// 生成随机session
-	session := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))))
+	session := randomSession()
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.bilibili.com/pgc/player/web/playurl?avid=50762638&cid=100279344&qn=0&type=&otype=json&ep_id=268176&fourk=1&fnver=0&fnval=16&session=%s&module=bangumi", session), nil)
 	if err != nil {

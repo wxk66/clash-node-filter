@@ -11,6 +11,7 @@ Windows 桌面 GUI，用真实 HTTP/HTTPS 网页访问批量验证 Clash/Mihomo 
 - 国外网页目标支持点击多选，使用 `√` / `□` 显示状态。
 - 可设置并发数、单阶段超时、最大延迟和样本大小。
 - 实时显示节点结果，结果表支持横向滚动，可导出 JSON/CSV。
+- 界面支持中文 / English，右上角一键切换，自动跟随系统语言并记忆选择。
 - 核心仅监听 `127.0.0.1:18080`，以隐藏窗口启动，不弹出终端。
 - 支持 Windows 高 DPI 显示。
 
@@ -51,6 +52,7 @@ python .\desktop_app.py
 ## 目录
 
 - `desktop_app.py`：桌面 GUI 和本地 API 客户端。
+- `i18n.py`：界面多语言文案（中文 / English）。
 - `backend/`：Mihomo 核心服务、节点解析、网页测试和解锁检测。
 - `build.ps1`：编译本地测试核心。
 - `build_gui.ps1`：使用 PyInstaller 打包 Windows GUI。

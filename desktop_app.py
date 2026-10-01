@@ -2,6 +2,7 @@
 
 界面使用 Tkinter，代理解析和网页测试由本地 Mihomo 核心提供。
 测试目标是 HTTP/HTTPS 网页请求，不使用 ICMP ping。
+界面文案支持中文 / English，见 i18n.py。
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+
+import i18n
 from dataclasses import dataclass
 from pathlib import Path
 from tkinter import END, BooleanVar, Canvas, StringVar, TclError, Tk, filedialog, messagebox, ttk
@@ -31,16 +34,23 @@ APP_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = APP_DIR / "backend"
 BACKEND_EXE = BACKEND_DIR / "clash-speedtest.exe"
 BACKEND_CONFIG = BACKEND_DIR / "desktop-config.yaml"
-API_BASE = "http://127.0.0.1:18080"
+# WebSocket 实时进度通道；REST API 地址以字面量写在各调用处，避免动态拼接。
 WS_URL = "ws://127.0.0.1:18080/ws"
 
 PLATFORMS = [
-    ("Netflix", "流媒体", True),
-    ("YouTube", "视频", True),
-    ("Disney+", "流媒体", True),
-    ("ChatGPT", "AI 服务", True),
-    ("Spotify", "音乐", True),
-    ("Bilibili", "区域内容", False),
+    ("Netflix", "cat.streaming", True),
+    ("YouTube", "cat.video", True),
+    ("Disney+", "cat.streaming", True),
+    ("ChatGPT", "cat.ai", True),
+    ("Spotify", "cat.music", True),
+    ("Bilibili", "cat.region", False),
+]
+
+# 界面显示文案与后端 testMode 的映射，键为 i18n 键。
+MODES = [
+    ("both", "mode.both"),
+    ("unlock_only", "mode.unlock_only"),
+    ("speed_only", "mode.speed_only"),
 ]
 
 
@@ -62,7 +72,6 @@ class ClashFilterApp:
 
     def __init__(self, root: Tk) -> None:
         self.root = root
-        self.root.title("Clash 节点筛选器")
         self.root.geometry("1180x780")
         self.root.minsize(980, 650)
         self.root.configure(bg="#f4f6fb")
@@ -75,27 +84,30 @@ class ClashFilterApp:
         self.fetching = False
         self.ws = None
 
-        self.source_var = StringVar()
-        self.server_var = StringVar(value="https://speed.cloudflare.com")
-        self.mode_var = StringVar(value="网页可用性 + 速度")
-        self.timeout_var = StringVar(value="8")
-        self.concurrent_var = StringVar(value="3")
-        self.latency_var = StringVar(value="1500")
-        self.download_var = StringVar(value="5")
-        self.upload_var = StringVar(value="2")
-        self.status_var = StringVar(value="准备就绪 · 尚未加载订阅")
-        self.progress_var = StringVar(value="0 / 0")
-        self.summary_var = StringVar(value="0 个节点")
-        self.platform_vars = {name: BooleanVar(value=enabled) for name, _, enabled in PLATFORMS}
-        self.platform_buttons: dict[str, ttk.Button] = {}
-        self.platform_status_var = StringVar()
-        self._update_platform_status()
-
+        self._init_vars()
         self._setup_style()
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.after(100, self._drain_events)
         self.root.after(200, self._ensure_backend)
+
+    def _init_vars(self) -> None:
+        """创建界面变量；切换语言重建界面时会重新调用并回填状态。"""
+        self.source_var = StringVar()
+        self.server_var = StringVar(value="https://speed.cloudflare.com")
+        self.mode_var = StringVar(value=i18n.tr("mode.both"))
+        self.timeout_var = StringVar(value="8")
+        self.concurrent_var = StringVar(value="3")
+        self.latency_var = StringVar(value="1500")
+        self.download_var = StringVar(value="5")
+        self.upload_var = StringVar(value="2")
+        self.status_var = StringVar(value=i18n.tr("status.ready"))
+        self.progress_var = StringVar(value="0 / 0")
+        self.summary_var = StringVar(value=i18n.tr("summary.nodes", count=0))
+        self.platform_vars = {name: BooleanVar(value=enabled) for name, _, enabled in PLATFORMS}
+        self.platform_buttons: dict[str, ttk.Button] = {}
+        self.platform_status_var = StringVar()
+        self._update_platform_status()
 
     def _setup_style(self) -> None:
         style = ttk.Style(self.root)
@@ -140,24 +152,26 @@ class ClashFilterApp:
         style.configure("Horizontal.TProgressbar", troughcolor="#e5ebf4", background="#147fc2", borderwidth=0, thickness=6)
 
     def _build_ui(self) -> None:
+        self._apply_window_title()
         shell = ttk.Frame(self.root, style="App.TFrame", padding=(24, 20, 24, 18))
         shell.pack(fill="both", expand=True)
 
         header = ttk.Frame(shell, style="App.TFrame")
         header.pack(fill="x")
-        ttk.Label(header, text="Clash 节点筛选器", style="Title.TLabel").pack(side="left")
-        ttk.Label(header, text="网页可用性 · 延迟 · 下载速度", style="Subtitle.TLabel").pack(side="left", padx=(14, 0), pady=(8, 0))
-        ttk.Label(header, text="本地测试工具", style="Subtitle.TLabel").pack(side="right", pady=(8, 0))
+        ttk.Label(header, text=i18n.tr("app.title"), style="Title.TLabel").pack(side="left")
+        ttk.Label(header, text=i18n.tr("app.subtitle"), style="Subtitle.TLabel").pack(side="left", padx=(14, 0), pady=(8, 0))
+        ttk.Label(header, text=i18n.tr("app.tagline"), style="Subtitle.TLabel").pack(side="right", pady=(8, 0))
+        ttk.Button(header, text=i18n.tr("app.language_toggle"), style="Ghost.TButton", width=9, command=self._toggle_language).pack(side="right", padx=(0, 12), pady=(6, 0))
 
         source = ttk.Frame(shell, style="Panel.TFrame", padding=16)
         source.pack(fill="x", pady=(18, 12))
-        ttk.Label(source, text="订阅来源", style="Section.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(source, text="支持订阅 URL、Clash/Mihomo YAML、Base64 节点列表；多个来源用英文逗号分隔", style="Muted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 12))
+        ttk.Label(source, text=i18n.tr("source.title"), style="Section.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(source, text=i18n.tr("source.hint"), style="Muted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 12))
         entry = ttk.Entry(source, textvariable=self.source_var)
         entry.grid(row=2, column=0, sticky="ew", padx=(0, 8))
         source.columnconfigure(0, weight=1)
-        ttk.Button(source, text="选择 YAML", style="Ghost.TButton", command=self._choose_file).grid(row=2, column=1, padx=(0, 8))
-        self.fetch_button = ttk.Button(source, text="获取节点", style="Accent.TButton", command=self.fetch_nodes)
+        ttk.Button(source, text=i18n.tr("source.choose_file"), style="Ghost.TButton", command=self._choose_file).grid(row=2, column=1, padx=(0, 8))
+        self.fetch_button = ttk.Button(source, text=i18n.tr("source.fetch"), style="Accent.TButton", command=self.fetch_nodes)
         self.fetch_button.grid(row=2, column=2)
 
         content = ttk.Frame(shell, style="App.TFrame")
@@ -192,7 +206,15 @@ class ClashFilterApp:
         footer = ttk.Frame(shell, style="App.TFrame")
         footer.pack(fill="x", pady=(12, 0))
         ttk.Label(footer, textvariable=self.status_var, style="Subtitle.TLabel").pack(side="left")
-        ttk.Label(footer, text="所有请求仅在本机执行，不上传节点配置", style="Subtitle.TLabel").pack(side="right")
+        ttk.Label(footer, text=i18n.tr("footer.privacy"), style="Subtitle.TLabel").pack(side="right")
+
+    def _apply_window_title(self) -> None:
+        title = i18n.tr("app.title")
+        self.root.title(title)
+        try:
+            self.root.iconname(title)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _resize_controls_inner(self, _event: object) -> None:
         self.controls_canvas.itemconfigure("controls-inner", width=self.controls_canvas.winfo_width())
@@ -203,22 +225,22 @@ class ClashFilterApp:
         self.controls_canvas.yview_scroll(-1 if delta > 0 else 1, "units")
 
     def _build_controls(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text="测试设置", style="Section.TLabel").pack(anchor="w")
-        ttk.Label(parent, text="通过真实网页请求判定节点，不发送 ICMP ping", style="Muted.TLabel").pack(anchor="w", pady=(3, 14))
+        ttk.Label(parent, text=i18n.tr("controls.title"), style="Section.TLabel").pack(anchor="w")
+        ttk.Label(parent, text=i18n.tr("controls.hint"), style="Muted.TLabel").pack(anchor="w", pady=(3, 14))
 
-        ttk.Label(parent, text="网页测速服务", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(parent, text=i18n.tr("controls.server"), style="Muted.TLabel").pack(anchor="w")
         server_box = ttk.Combobox(parent, textvariable=self.server_var, values=["https://speed.cloudflare.com"], state="normal")
         server_box.pack(fill="x", pady=(4, 12))
-        ttk.Label(parent, text="末尾是否带 / 不影响访问，程序会自动规范化。", style="Muted.TLabel").pack(anchor="w", pady=(0, 10))
+        ttk.Label(parent, text=i18n.tr("controls.server_hint"), style="Muted.TLabel").pack(anchor="w", pady=(0, 10))
 
-        ttk.Label(parent, text="测试模式", style="Muted.TLabel").pack(anchor="w")
-        mode_box = ttk.Combobox(parent, textvariable=self.mode_var, values=["网页可用性 + 速度", "仅网页可用性", "仅速度"], state="readonly", style="Mode.TCombobox")
+        ttk.Label(parent, text=i18n.tr("controls.mode"), style="Muted.TLabel").pack(anchor="w")
+        mode_box = ttk.Combobox(parent, textvariable=self.mode_var, values=[i18n.tr(key) for _mode_id, key in MODES], state="readonly", style="Mode.TCombobox")
         mode_box.pack(fill="x", pady=(4, 12))
 
-        ttk.Label(parent, text="国外网页目标", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(parent, text=i18n.tr("controls.targets"), style="Muted.TLabel").pack(anchor="w")
         platforms = ttk.Frame(parent, style="Panel.TFrame")
         platforms.pack(fill="x", pady=(4, 12))
-        for index, (name, category, _) in enumerate(PLATFORMS):
+        for index, (name, _category, _enabled) in enumerate(PLATFORMS):
             button = ttk.Button(platforms, text="", style="Target.TButton", command=lambda selected=name: self._select_platform(selected))
             button.grid(row=index // 2, column=index % 2, sticky="ew", padx=(0, 8), pady=3)
             self.platform_buttons[name] = button
@@ -229,7 +251,7 @@ class ClashFilterApp:
 
         grid = ttk.Frame(parent, style="Panel.TFrame")
         grid.pack(fill="x", pady=(2, 12))
-        fields = [("并发数", self.concurrent_var), ("超时（秒）", self.timeout_var), ("最大延迟（毫秒）", self.latency_var), ("下载样本（MB）", self.download_var), ("上传样本（MB）", self.upload_var)]
+        fields = [(i18n.tr("field.concurrent"), self.concurrent_var), (i18n.tr("field.timeout"), self.timeout_var), (i18n.tr("field.max_latency"), self.latency_var), (i18n.tr("field.download"), self.download_var), (i18n.tr("field.upload"), self.upload_var)]
         for index, (label, variable) in enumerate(fields):
             row, column = divmod(index, 2)
             ttk.Label(grid, text=label, style="Muted.TLabel").grid(row=row * 2, column=column, sticky="w", padx=(0 if column == 0 else 8, 0), pady=(0, 3))
@@ -237,20 +259,20 @@ class ClashFilterApp:
         grid.columnconfigure(0, weight=1)
         grid.columnconfigure(1, weight=1)
 
-        self.start_button = ttk.Button(parent, text="开始批量测试", style="Accent.TButton", command=self.start_test)
+        self.start_button = ttk.Button(parent, text=i18n.tr("button.start"), style="Accent.TButton", command=self.start_test)
         self.start_button.pack(fill="x", pady=(4, 7))
-        self.stop_button = ttk.Button(parent, text="停止当前测试", style="Danger.TButton", command=self.stop_test, state="disabled")
+        self.stop_button = ttk.Button(parent, text=i18n.tr("button.stop"), style="Danger.TButton", command=self.stop_test, state="disabled")
         self.stop_button.pack(fill="x")
 
         ttk.Separator(parent).pack(fill="x", pady=16)
-        ttk.Label(parent, text="筛选建议", style="Section.TLabel").pack(anchor="w")
-        ttk.Label(parent, text="先获取节点确认订阅可解析，再开始测试。网页可用性通过目标平台的 HTTPS 请求检测；测速使用 Cloudflare 下载/上传接口。", style="Muted.TLabel", wraplength=250, justify="left").pack(anchor="w", pady=(6, 0))
+        ttk.Label(parent, text=i18n.tr("tips.title"), style="Section.TLabel").pack(anchor="w")
+        ttk.Label(parent, text=i18n.tr("tips.body"), style="Muted.TLabel", wraplength=250, justify="left").pack(anchor="w", pady=(6, 0))
 
     def _build_results(self, parent: ttk.Frame) -> None:
         top = ttk.Frame(parent, style="Panel.TFrame")
         top.grid(row=0, column=0, sticky="ew")
         top.columnconfigure(0, weight=1)
-        ttk.Label(top, text="节点结果", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(top, text=i18n.tr("results.title"), style="Section.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(top, textvariable=self.summary_var, style="Muted.TLabel").grid(row=0, column=1, sticky="e")
 
         progress_row = ttk.Frame(parent, style="Panel.TFrame")
@@ -267,7 +289,7 @@ class ClashFilterApp:
         table_frame.rowconfigure(1, weight=0)
         columns = ("name", "type", "server", "latency", "download", "web", "status")
         self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="extended")
-        headings = {"name": "节点", "type": "协议", "server": "服务器", "latency": "延迟", "download": "下载速度", "web": "网页可用", "status": "状态"}
+        headings = {"name": i18n.tr("col.name"), "type": i18n.tr("col.type"), "server": i18n.tr("col.server"), "latency": i18n.tr("col.latency"), "download": i18n.tr("col.download"), "web": i18n.tr("col.web"), "status": i18n.tr("col.status")}
         widths = {"name": 220, "type": 90, "server": 150, "latency": 75, "download": 100, "web": 100, "status": 85}
         for column in columns:
             self.tree.heading(column, text=headings[column])
@@ -281,21 +303,21 @@ class ClashFilterApp:
 
         actions = ttk.Frame(parent, style="Panel.TFrame")
         actions.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        ttk.Button(actions, text="导出 JSON", style="Ghost.TButton", command=lambda: self.export_results("json")).pack(side="left")
-        ttk.Button(actions, text="导出 CSV", style="Ghost.TButton", command=lambda: self.export_results("csv")).pack(side="left", padx=(8, 0))
-        ttk.Button(actions, text="清空结果", style="Ghost.TButton", command=self.clear_results).pack(side="right")
+        ttk.Button(actions, text=i18n.tr("button.export_json"), style="Ghost.TButton", command=lambda: self.export_results("json")).pack(side="left")
+        ttk.Button(actions, text=i18n.tr("button.export_csv"), style="Ghost.TButton", command=lambda: self.export_results("csv")).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text=i18n.tr("button.clear"), style="Ghost.TButton", command=self.clear_results).pack(side="right")
 
     def _choose_file(self) -> None:
-        path = filedialog.askopenfilename(title="选择 Clash/Mihomo 配置", filetypes=[("YAML 文件", "*.yaml *.yml"), ("所有文件", "*.*")])
+        path = filedialog.askopenfilename(title=i18n.tr("dialog.choose_config"), filetypes=[(i18n.tr("file.yaml"), "*.yaml *.yml"), (i18n.tr("file.all"), "*.*")])
         if path:
             self.source_var.set(path)
 
     def _ensure_backend(self) -> None:
         if self._health_check():
-            self.status_var.set("本地测试核心已连接 · 可以获取订阅")
+            self.status_var.set(i18n.tr("status.core_connected"))
             return
         if not BACKEND_EXE.exists():
-            self.status_var.set("未找到测试核心，请先运行 build.ps1 构建")
+            self.status_var.set(i18n.tr("status.core_missing"))
             return
         threading.Thread(target=self._backend_worker, daemon=True).start()
 
@@ -316,27 +338,41 @@ class ClashFilterApp:
                 launch_kwargs["startupinfo"] = startupinfo
             self.backend = subprocess.Popen([str(BACKEND_EXE), f"-config={BACKEND_CONFIG.name}"], **launch_kwargs)
         except OSError as exc:
-            self.event_queue.put(("error", f"测试核心启动失败：{exc}"))
+            self.event_queue.put(("error", i18n.tr("status.core_start_failed", error=exc)))
             return
         for _ in range(30):
             if self._health_check():
-                self.event_queue.put(("backend", "本地测试核心已连接 · 可以获取订阅"))
+                self.event_queue.put(("backend", i18n.tr("status.core_connected")))
                 return
             time.sleep(0.15)
-        self.event_queue.put(("error", "测试核心启动超时，请检查 backend/logs"))
+        self.event_queue.put(("error", i18n.tr("status.core_timeout")))
 
     def _health_check(self) -> bool:
         try:
-            with urllib.request.urlopen(f"{API_BASE}/health", timeout=0.4) as response:
+            with urllib.request.urlopen("http://127.0.0.1:18080/health", timeout=0.4) as response:
                 return response.status == 200
         except (OSError, urllib.error.URLError):
             return False
 
-    def _request_json(self, path: str, payload: dict | None = None, timeout: int = 30) -> dict:
-        data = None if payload is None else json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(f"{API_BASE}{path}", data=data, headers={"Content-Type": "application/json"}, method="POST" if data else "GET")
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+    # 本机测试核心的 API 地址以字面量写在各调用处，不接受动态拼接的 URL。
+    def _nodes_api(self, payload: dict) -> dict:
+        data = json.dumps(payload).encode("utf-8")
+        with urllib.request.urlopen("http://127.0.0.1:18080/config/nodes", data=data, timeout=45) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    def _test_api(self, payload: dict, timeout: int) -> dict:
+        data = json.dumps(payload).encode("utf-8")
+        with urllib.request.urlopen("http://127.0.0.1:18080/test", data=data, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def _test_async_api(self, payload: dict) -> dict:
+        data = json.dumps(payload).encode("utf-8")
+        with urllib.request.urlopen("http://127.0.0.1:18080/test/async", data=data, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def _test_stop_api(self) -> None:
+        with urllib.request.urlopen("http://127.0.0.1:18080/test/stop", data=b"{}", timeout=3) as response:
+            response.read()
 
     def _source(self) -> str:
         return self.source_var.get().strip()
@@ -346,11 +382,11 @@ class ClashFilterApp:
             return
         source = self._source()
         if not source:
-            messagebox.showwarning("缺少订阅来源", "请粘贴订阅链接或选择一个 Clash/Mihomo YAML 文件。")
+            messagebox.showwarning(i18n.tr("dialog.warn_source_title"), i18n.tr("dialog.warn_source_fetch"))
             return
         self.fetching = True
         self.fetch_button.configure(state="disabled")
-        self.status_var.set("正在读取订阅并解析节点……")
+        self.status_var.set(i18n.tr("status.fetching"))
         threading.Thread(target=self._fetch_worker, args=(source,), daemon=True).start()
 
     def _fetch_worker(self, source: str) -> None:
@@ -358,43 +394,53 @@ class ClashFilterApp:
         last_error: Exception | None = None
         for attempt in range(2):
             try:
-                response = self._request_json("/config/nodes", payload, timeout=45)
+                response = self._nodes_api(payload)
                 if not response.get("success", False):
-                    raise RuntimeError(response.get("error", "节点解析失败"))
+                    raise RuntimeError(response.get("error", i18n.tr("error.parse")))
                 self.event_queue.put(("nodes", response.get("nodes", [])))
                 return
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 if attempt == 0:
                     time.sleep(0.8)
-        self.event_queue.put(("error", f"获取节点失败：{self._friendly_network_error(last_error)}"))
+        self.event_queue.put(("error", i18n.tr("error.fetch", error=self._friendly_network_error(last_error))))
 
     @staticmethod
     def _friendly_network_error(error: Exception | None) -> str:
-        text = str(error or "未知错误")
+        text = str(error or i18n.tr("net.unknown"))
         lowered = text.lower()
         if "actively refused" in lowered or "目标计算机积极拒绝" in text or "connection refused" in lowered:
-            return "订阅服务器拒绝了连接。请确认链接仍有效、端口可访问，或稍后重试；这通常是订阅服务端问题，不是节点测速失败。"
+            return i18n.tr("net.refused")
         if "timed out" in lowered or "超时" in text:
-            return "订阅服务器响应超时。请检查网络、代理/VPN 状态，或稍后重试。"
+            return i18n.tr("net.timeout")
         if "urlopen error" in lowered:
-            return "无法连接订阅地址，请检查链接是否完整、是否需要登录，以及当前网络是否能访问该域名。"
+            return i18n.tr("net.unreachable")
         return text
 
     def _options(self) -> TestOptions:
         def number(var: StringVar, name: str, minimum: int, maximum: int) -> int:
-            value = int(var.get().strip())
+            try:
+                value = int(var.get().strip())
+            except ValueError:
+                raise ValueError(i18n.tr("error.not_number", name=name)) from None
             if not minimum <= value <= maximum:
-                raise ValueError(f"{name}需在 {minimum}～{maximum} 之间")
+                raise ValueError(i18n.tr("error.range", name=name, minimum=minimum, maximum=maximum))
             return value
 
         selected = [name for name, _category, _enabled in PLATFORMS if self.platform_vars[name].get()]
-        mode = {"网页可用性 + 速度": "both", "仅网页可用性": "unlock_only", "仅速度": "speed_only"}[self.mode_var.get()]
-        return TestOptions(self._source(), self.server_var.get().strip().rstrip("/"), mode, number(self.timeout_var, "超时", 1, 300), number(self.concurrent_var, "并发数", 1, 20), number(self.latency_var, "最大延迟", 10, 10000), number(self.download_var, "下载样本", 1, 1000), number(self.upload_var, "上传样本", 1, 1000), selected)
+        return TestOptions(self._source(), self.server_var.get().strip().rstrip("/"), self._mode_id(), number(self.timeout_var, i18n.tr("field_name.timeout"), 1, 300), number(self.concurrent_var, i18n.tr("field_name.concurrent"), 1, 20), number(self.latency_var, i18n.tr("field_name.max_latency"), 10, 10000), number(self.download_var, i18n.tr("field_name.download"), 1, 1000), number(self.upload_var, i18n.tr("field_name.upload"), 1, 1000), selected)
+
+    def _mode_id(self) -> str:
+        """把界面显示的模式文案映射回后端 testMode 标识。"""
+        display_to_id = {i18n.tr(key): mode_id for mode_id, key in MODES}
+        return display_to_id.get(self.mode_var.get(), "both")
 
     def _update_platform_status(self) -> None:
         selected = [name for name, _category, _enabled in PLATFORMS if self.platform_vars[name].get()]
-        self.platform_status_var.set(f"已选择 {len(selected)} 个目标：{', '.join(selected) if selected else '未选择（将跳过网页解锁检测）'}")
+        if selected:
+            self.platform_status_var.set(i18n.tr("targets.selected", count=len(selected), names=", ".join(selected)))
+        else:
+            self.platform_status_var.set(i18n.tr("targets.none"))
 
     def _select_platform(self, name: str) -> None:
         """点击整块目标切换选中状态，并用勾号显示当前状态。"""
@@ -407,7 +453,7 @@ class ClashFilterApp:
             selected = self.platform_vars[name].get()
             button = self.platform_buttons.get(name)
             if button is not None:
-                button.configure(text=f"{'√' if selected else '□'} {name}  ·  {category}", style="TargetSelected.TButton" if selected else "Target.TButton")
+                button.configure(text=f"{'√' if selected else '□'} {name}  ·  {i18n.tr(category)}", style="TargetSelected.TButton" if selected else "Target.TButton")
 
     def start_test(self) -> None:
         if self.testing or self.fetching:
@@ -415,10 +461,10 @@ class ClashFilterApp:
         try:
             options = self._options()
         except (ValueError, KeyError) as exc:
-            messagebox.showwarning("设置有误", str(exc))
+            messagebox.showwarning(i18n.tr("dialog.invalid_title"), str(exc))
             return
         if not options.source:
-            messagebox.showwarning("缺少订阅来源", "请先输入订阅链接或选择本地配置。")
+            messagebox.showwarning(i18n.tr("dialog.warn_source_title"), i18n.tr("dialog.warn_source_test"))
             return
         self.testing = True
         self.start_button.configure(state="disabled")
@@ -428,8 +474,8 @@ class ClashFilterApp:
         self._render_results()
         self.progress.configure(value=0, mode="indeterminate")
         self.progress.start(12)
-        self.progress_var.set("测试中……")
-        self.status_var.set("已启动网页测试 · 正在逐个验证节点")
+        self.progress_var.set(i18n.tr("status.testing"))
+        self.status_var.set(i18n.tr("status.test_started"))
         threading.Thread(target=self._test_worker, args=(options,), daemon=True).start()
 
     def _test_payload(self, options: TestOptions) -> dict:
@@ -444,16 +490,16 @@ class ClashFilterApp:
                 ws = websocket.create_connection(WS_URL, timeout=5)
                 ws.settimeout(1)
                 self.ws = ws
-                response = self._request_json("/test/async", payload, timeout=15)
+                response = self._test_async_api(payload)
                 if not response.get("success", False):
-                    raise RuntimeError(response.get("error", "测试任务创建失败"))
+                    raise RuntimeError(response.get("error", i18n.tr("error.task_create")))
                 async_started = True
                 started_at = time.monotonic()
                 total_proxies = 0
                 hard_deadline = started_at + max(180, options.timeout * 60)
                 while True:
                     if time.monotonic() >= hard_deadline:
-                        raise TimeoutError("实时测试超过整批任务保护时限，已自动结束等待")
+                        raise TimeoutError(i18n.tr("error.ws_deadline"))
                     try:
                         raw = ws.recv()
                     except Exception as recv_error:  # websocket-client 的超时类型跨版本不一致
@@ -484,7 +530,7 @@ class ClashFilterApp:
                         self.event_queue.put(("cancelled", data))
                         break
                     elif kind == "error":
-                        self.event_queue.put(("error", data.get("message", "测试失败")))
+                        self.event_queue.put(("error", data.get("message", i18n.tr("error.test"))))
                         break
                 ws.close()
                 self.ws = None
@@ -497,19 +543,19 @@ class ClashFilterApp:
                     pass
                 self.ws = None
                 if self.testing and not async_started:
-                    self.event_queue.put(("notice", f"实时通道不可用，改用同步测试：{exc}"))
+                    self.event_queue.put(("notice", i18n.tr("error.ws_fallback", error=exc)))
                 elif self.testing and async_started:
-                    self.event_queue.put(("error", f"实时测试未正常结束：{self._friendly_network_error(exc)}"))
+                    self.event_queue.put(("error", i18n.tr("error.ws_abnormal", error=self._friendly_network_error(exc))))
                     return
         try:
-            response = self._request_json("/test", payload, timeout=max(60, options.timeout * 30))
+            response = self._test_api(payload, timeout=max(60, options.timeout * 30))
             if not response.get("success", False):
-                raise RuntimeError(response.get("error", "测试失败"))
+                raise RuntimeError(response.get("error", i18n.tr("error.test")))
             for result in response.get("results", []):
                 self.event_queue.put(("result", result))
             self.event_queue.put(("complete", {"total_tested": len(response.get("results", []))}))
         except Exception as exc:  # noqa: BLE001
-            self.event_queue.put(("error", f"测试失败：{self._friendly_network_error(exc)}"))
+            self.event_queue.put(("error", i18n.tr("error.test_with", error=self._friendly_network_error(exc))))
 
     def stop_test(self) -> None:
         if not self.testing:
@@ -517,7 +563,7 @@ class ClashFilterApp:
         self.testing = False
         try:
             # 请求本机核心取消任务；此前仅关闭 WebSocket，会让后端继续测试。
-            self._request_json("/test/stop", {}, timeout=3)
+            self._test_stop_api()
         except Exception:
             pass
         try:
@@ -525,7 +571,7 @@ class ClashFilterApp:
                 self.ws.close()
         except Exception:
             pass
-        self.status_var.set("已停止当前测试；未完成任务不会继续显示")
+        self.status_var.set(i18n.tr("status.test_stopped"))
         self._finish_testing()
 
     def _finish_testing(self) -> None:
@@ -535,7 +581,7 @@ class ClashFilterApp:
         self.fetch_button.configure(state="normal")
         self.progress.stop()
         self.progress.configure(mode="determinate", value=100 if self.results else 0)
-        self.progress_var.set(f"{len(self.results)} 条结果")
+        self.progress_var.set(i18n.tr("status.results_count", count=len(self.results)))
 
     def _drain_events(self) -> None:
         try:
@@ -543,8 +589,8 @@ class ClashFilterApp:
                 kind, data = self.event_queue.get_nowait()
                 if kind == "nodes":
                     self.nodes = list(data)  # type: ignore[arg-type]
-                    self.summary_var.set(f"{len(self.nodes)} 个节点")
-                    self.status_var.set(f"已解析 {len(self.nodes)} 个节点 · 可以开始测试")
+                    self.summary_var.set(i18n.tr("summary.nodes", count=len(self.nodes)))
+                    self.status_var.set(i18n.tr("status.fetched", count=len(self.nodes)))
                     self._render_nodes()
                     self.fetching = False
                     self.fetch_button.configure(state="normal")
@@ -557,20 +603,20 @@ class ClashFilterApp:
                     total = max(int(data.get("total_count", 1)), 1)  # type: ignore[union-attr]
                     self.progress.configure(mode="determinate", value=completed / total * 100)
                     self.progress_var.set(f"{completed} / {total}")
-                    self.status_var.set(f"正在测试：{data.get('current_proxy', '节点')} · {data.get('status', '')}")  # type: ignore[union-attr]
+                    self.status_var.set(i18n.tr("status.testing_node", name=data.get("current_proxy", i18n.tr("col.name")), status=data.get("status", "")))  # type: ignore[union-attr]
                 elif kind == "result":
                     if self.testing:
                         self.results.append(dict(data))  # type: ignore[arg-type]
                         self._render_results()
                 elif kind == "complete":
-                    self.status_var.set(f"测试完成 · 已返回 {len(self.results)} 条结果")
-                    self.summary_var.set(f"{len(self.results)} 条测试结果")
+                    self.status_var.set(i18n.tr("status.test_done", count=len(self.results)))
+                    self.summary_var.set(i18n.tr("summary.results", count=len(self.results)))
                     self._finish_testing()
                 elif kind == "cancelled":
                     completed = int(data.get("completed_tests", len(self.results)))  # type: ignore[union-attr]
                     total = int(data.get("total_tests", completed))  # type: ignore[union-attr]
-                    self.status_var.set(f"测试已停止 · 保留 {len(self.results)} 条结果（完成 {completed}/{total}）")
-                    self.summary_var.set(f"{len(self.results)} 条测试结果")
+                    self.status_var.set(i18n.tr("status.test_cancelled", count=len(self.results), done=completed, total=total))
+                    self.summary_var.set(i18n.tr("summary.results", count=len(self.results)))
                     self._finish_testing()
                 elif kind == "notice":
                     self.status_var.set(str(data))
@@ -579,7 +625,7 @@ class ClashFilterApp:
                 elif kind == "error":
                     self.fetching = False
                     self._finish_testing()
-                    messagebox.showerror("操作失败", str(data))
+                    messagebox.showerror(i18n.tr("dialog.error_title"), str(data))
         except queue.Empty:
             pass
         self.root.after(100, self._drain_events)
@@ -587,7 +633,7 @@ class ClashFilterApp:
     def _render_nodes(self) -> None:
         self.tree.delete(*self.tree.get_children())
         for node in self.nodes:
-            self.tree.insert("", END, values=(node.get("name", ""), node.get("type", ""), f"{node.get('server', '')}:{node.get('port', '')}", "—", "—", "—", "待测试"))
+            self.tree.insert("", END, values=(node.get("name", ""), node.get("type", ""), f"{node.get('server', '')}:{node.get('port', '')}", "—", "—", "—", i18n.tr("node.pending")))
 
     def _render_results(self) -> None:
         self.tree.delete(*self.tree.get_children())
@@ -597,9 +643,11 @@ class ClashFilterApp:
             web = result.get("unlock_summary", {}) or {}
             supported = web.get("total_supported", 0) if isinstance(web, dict) else 0
             total = web.get("total_tested", 0) if isinstance(web, dict) else 0
-            status = result.get("status", "")
+            # 后端返回英文状态值，按界面语言显示；未知值原样展示。
+            status = str(result.get("status", "") or "")
+            status = {"success": i18n.tr("node.alive"), "failed": i18n.tr("node.failed"), "timeout": i18n.tr("node.timeout")}.get(status, status)
             if not status:
-                status = "可用" if float(result.get("packet_loss", 100) or 100) < 100 else "失败"
+                status = i18n.tr("node.alive") if float(result.get("packet_loss", 100) or 100) < 100 else i18n.tr("node.failed")
             self.tree.insert("", END, values=(result.get("proxy_name", ""), result.get("proxy_type", ""), result.get("proxy_ip", ""), f"{float(latency):.0f} ms" if latency else "—", f"{float(download):.2f} Mbps" if download else "—", f"{supported}/{total}" if total else "—", status))
 
     @staticmethod
@@ -627,14 +675,14 @@ class ClashFilterApp:
         self._render_nodes()
         self.progress.configure(value=0)
         self.progress_var.set("0 / 0")
-        self.status_var.set("已清空测试结果")
+        self.status_var.set(i18n.tr("status.cleared"))
 
     def export_results(self, fmt: str) -> None:
         if not self.results:
-            messagebox.showinfo("没有结果", "请先完成一次测试，再导出结果。")
+            messagebox.showinfo(i18n.tr("dialog.no_results_title"), i18n.tr("dialog.no_results"))
             return
         suffix = ".json" if fmt == "json" else ".csv"
-        path = filedialog.asksaveasfilename(title="导出测试结果", defaultextension=suffix, filetypes=[(fmt.upper(), f"*{suffix}"), ("所有文件", "*.*")])
+        path = filedialog.asksaveasfilename(title=i18n.tr("dialog.export_title"), defaultextension=suffix, filetypes=[(fmt.upper(), f"*{suffix}"), (i18n.tr("file.all"), "*.*")])
         if not path:
             return
         try:
@@ -646,9 +694,9 @@ class ClashFilterApp:
                     writer = csv.DictWriter(handle, fieldnames=fields)
                     writer.writeheader()
                     writer.writerows({field: row.get(field, "") for field in fields} for row in self.results)
-            self.status_var.set(f"已导出 {Path(path).name}")
+            self.status_var.set(i18n.tr("status.exported", name=Path(path).name))
         except OSError as exc:
-            messagebox.showerror("导出失败", str(exc))
+            messagebox.showerror(i18n.tr("dialog.export_error_title"), str(exc))
 
     def close(self) -> None:
         self.testing = False
@@ -662,15 +710,72 @@ class ClashFilterApp:
             pass
         self.root.destroy()
 
+    def _toggle_language(self) -> None:
+        i18n.set_language("en" if i18n.get_language() == "zh" else "zh")
+        self._rebuild_ui()
+
+    def _rebuild_ui(self) -> None:
+        """切换语言后销毁并重建界面，保留用户输入和测试状态。"""
+        state = {
+            "source": self.source_var.get(),
+            "server": self.server_var.get(),
+            "mode": self._mode_id(),
+            "timeout": self.timeout_var.get(),
+            "concurrent": self.concurrent_var.get(),
+            "latency": self.latency_var.get(),
+            "download": self.download_var.get(),
+            "upload": self.upload_var.get(),
+            "platforms": {name: var.get() for name, var in self.platform_vars.items()},
+        }
+        for child in self.root.winfo_children():
+            child.destroy()
+        self._init_vars()
+        self._build_ui()
+        self._apply_state(state)
+
+    def _apply_state(self, state: dict) -> None:
+        self.source_var.set(state["source"])
+        self.server_var.set(state["server"])
+        self.mode_var.set(i18n.tr(dict(MODES).get(state["mode"], "mode.both")))
+        self.timeout_var.set(state["timeout"])
+        self.concurrent_var.set(state["concurrent"])
+        self.latency_var.set(state["latency"])
+        self.download_var.set(state["download"])
+        self.upload_var.set(state["upload"])
+        for name, checked in state["platforms"].items():
+            if name in self.platform_vars:
+                self.platform_vars[name].set(checked)
+        self._refresh_platform_buttons()
+        self._update_platform_status()
+        self._sync_button_states()
+        if self.results:
+            self._render_results()
+        elif self.nodes:
+            self._render_nodes()
+        if self.testing:
+            self.progress.configure(mode="indeterminate")
+            self.progress.start(12)
+            self.progress_var.set(i18n.tr("status.testing"))
+            self.status_var.set(i18n.tr("status.test_started"))
+        elif self.results:
+            self.progress.configure(mode="determinate", value=100)
+            self.progress_var.set(i18n.tr("status.results_count", count=len(self.results)))
+            self.summary_var.set(i18n.tr("summary.results", count=len(self.results)))
+        else:
+            self.summary_var.set(i18n.tr("summary.nodes", count=len(self.nodes)))
+
+    def _sync_button_states(self) -> None:
+        busy = self.testing or self.fetching
+        self.start_button.configure(state="disabled" if busy else "normal")
+        self.stop_button.configure(state="normal" if self.testing else "disabled")
+        self.fetch_button.configure(state="disabled" if busy else "normal")
+
 
 def main() -> None:
+    i18n.init()
     _enable_high_dpi()
     root = Tk()
     _configure_tk_scaling(root)
-    try:
-        root.iconname("Clash 节点筛选器")
-    except Exception:
-        pass
     ClashFilterApp(root)
     root.mainloop()
 
