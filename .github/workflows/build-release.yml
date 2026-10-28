@@ -2,20 +2,14 @@ name: Build and update release
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - "desktop_app.py"
-      - "i18n.py"
-      - "requirements.txt"
-      - "Clash节点筛选器.spec"
-      - ".github/workflows/build-release.yml"
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       release_tag:
         description: "要更新的 release tag"
         required: true
-        default: "v1.0.0"
+        default: "v1.1.0"
 
 permissions:
   contents: write
@@ -23,6 +17,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,8 +50,16 @@ jobs:
       - name: Show artifact checksum
         run: Get-FileHash "dist\ClashNodeFilter.exe" -Algorithm SHA256
 
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$env:RELEASE_TAG" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "$env:RELEASE_TAG" --title "Clash 节点筛选器 $env:RELEASE_TAG" --notes "由 GitHub Actions 自动构建发布。"
+          }
+
       - name: Upload asset to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag || 'v1.0.0' }}
         run: gh release upload "$env:RELEASE_TAG" "dist\ClashNodeFilter.exe" --clobber
