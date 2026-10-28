@@ -1,6 +1,15 @@
 name: Build and update release
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "desktop_app.py"
+      - "i18n.py"
+      - "requirements.txt"
+      - "Clash节点筛选器.spec"
+      - ".github/workflows/build-release.yml"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -48,4 +57,5 @@ jobs:
       - name: Upload asset to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.release_tag }}" "dist\ClashNodeFilter.exe" --clobber
+          RELEASE_TAG: ${{ inputs.release_tag || 'v1.0.0' }}
+        run: gh release upload "$env:RELEASE_TAG" "dist\ClashNodeFilter.exe" --clobber
