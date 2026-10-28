@@ -1,0 +1,51 @@
+name: Build and update release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "要更新的 release tag"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build backend core
+        working-directory: backend
+        run: go build -trimpath -ldflags="-s -w" -o clash-speedtest.exe .
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build GUI executable
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed
+          --name "ClashNodeFilter"
+          --add-binary "backend\clash-speedtest.exe;backend"
+          --add-data "backend\desktop-config.yaml;backend"
+          desktop_app.py
+
+      - name: Show artifact checksum
+        run: Get-FileHash "dist\ClashNodeFilter.exe" -Algorithm SHA256
+
+      - name: Upload asset to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.release_tag }}" "dist\ClashNodeFilter.exe" --clobber
